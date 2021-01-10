@@ -88,7 +88,11 @@ class World:
             _render_line_to_line(canvas, line_tb, line_ob, M[1], B[1], pixel_shader)
 
 def _render_line_to_line(canvas, line1, line2, y_start, y_end, shader):
-    for y in range(int(y_start), int(y_end)):
+    # enforce canvas boundaries
+    y_start = int(max(y_start,0))
+    y_end = int(min(y_end, canvas.shape[0]-1))
+    # draw top to bottom
+    for y in range(y_start, y_end):
         x1 = line1.get_x(y)
         x2 = line2.get_x(y)
         x_start,x_end= (x1,x2) if x1<x2 else (x2,x1)
@@ -132,7 +136,7 @@ class Line():
 if __name__ == "__main__":
     w = World(640, 360)
     test_obj = [
-        [Vertex(-0.2, -0.2, 2.0), Vertex(0.4, 0.4, 2.0), Vertex(0.0, -0.4, 2.0)]
+        [Vertex(-0.2, -0.2, 1.0), Vertex(0.4, 0.4, 1.0), Vertex(0.0, -0.4, 0.2)]
     ]
     w.load_object(test_obj)
     w.show()
