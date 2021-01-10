@@ -190,6 +190,10 @@ class Line():
             self.q = x2
             self.m = None # Infinite if vertical
             self.invm = 0
+        elif self.is_horizontal:
+            self.q = y2
+            self.invm = None # Infinite if horizontal
+            self.m = 0
         else:
             self.m = dy / dx 
             self.invm = dx / dy
