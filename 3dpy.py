@@ -21,19 +21,29 @@ class Vertex:
     def pos(self):
         return (self.x, self.y, self.z)
 
+class Face():
+    def __init__(self, vertices, color):
+        self.vertices = vertices
+        self.color = color
 
 
+class UniformShader():
+    def __init__(self, face:Face):
+        self.face = face
+
+    def __call__(self,x,y):
+        return self.face.color
 
 class World:
     def __init__(self, w, h):
         self.canvas_shape = (h,w,3)
         self.camera = Camera(0,0,0,0,0,0,1)
         self.faces = []
-        self.shader = None
+        self.lights = []
+        self.shader = UniformShader
 
     def load_object(self, faces):
         for face in faces:
-            assert len(face)==3
             self.faces.append(face)
 
     def render(self):
@@ -59,7 +69,7 @@ class World:
 
 
     def _render_face(self, canvas, face):
-        points = [self._project(p) for p in face]
+        points = [self._project(p) for p in face.vertices]
         points = np.array(points)
         idx_top = np.argmin(points[:,1]) # find top point
         idx_bottom = np.argmax(points[:,1]) # find bottom point
@@ -69,8 +79,7 @@ class World:
         line_tb = Line(T,B)
         line_to = Line(T,O)
         line_ob = Line(B,O)
-        def pixel_shader(x,y):
-            return (255,0,0)
+        pixel_shader = self.shader(face)
         if line_to.is_horizontal: # triangle flat on top
             _render_line_to_line(canvas, line_tb, line_ob, T[1], B[1], pixel_shader)
         elif line_ob.is_horizontal: # triangle flat on bottom
@@ -136,7 +145,7 @@ class Line():
 if __name__ == "__main__":
     w = World(640, 360)
     test_obj = [
-        [Vertex(-0.2, -0.2, 1.0), Vertex(0.4, 0.4, 1.0), Vertex(0.0, -0.4, 0.2)]
+        Face([Vertex(-0.2, -0.2, 1.0), Vertex(0.4, 0.4, 1.0), Vertex(0.0, -0.4, 0.2)], (0,0,200))
     ]
     w.load_object(test_obj)
     w.show()
