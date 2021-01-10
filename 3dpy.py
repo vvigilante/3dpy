@@ -35,7 +35,6 @@ def _compute_normal(vertices):
     AC = C-A
     n = np.cross(AB,AC)
     n /= np.linalg.norm(n)
-    print(n)
     return n
 
 class Face():
@@ -81,7 +80,6 @@ class FlatShader():
         for light in self.lights:
             if DirectionalLight==type(light):
                 dot=np.abs(np.dot(self.face.normal, light.direction))
-                print(dot)
                 self.color+= dot*light.intensity*np.array(self.face.color, dtype=float)
         self.color = tuple(self.color.astype(np.uint8))
 
@@ -139,10 +137,10 @@ class World:
         pixel_shader = self.shader(face, self.lights)
         if line_to.is_horizontal: # triangle flat on top
             _render_line_to_line(canvas, line_tb, line_ob, T[1], B[1], pixel_shader)
-            print('flat top')
+            #print('flat top')
         elif line_ob.is_horizontal: # triangle flat on bottom
             _render_line_to_line(canvas, line_tb, line_to, T[1], B[1], pixel_shader)
-            print('flat base')
+            #print('flat base')
         else:
             # T..                Generic triangle (T,O,B)
             #   \   .            
@@ -151,7 +149,7 @@ class World:
             #      \  /          We'll draw it left to right, top to bottom
             #       \/B          TM to TO, MB to OB
             M = [line_tb.get_x(O[1]),O[1]]
-            print('generic')
+            #print('generic')
             _render_line_to_line(canvas, line_tb, line_to, T[1], M[1], pixel_shader)
             _render_line_to_line(canvas, line_tb, line_ob, M[1], B[1], pixel_shader)
 
@@ -186,7 +184,6 @@ class Line():
         x2,y2 = p2
         self.is_vertical = abs(x1-x2)<1
         self.is_horizontal = abs(y1-y2)<1
-        print("y1-y2", abs(y1-y2), "   x1-x2", abs(x1-x2))
         dx = x1-x2
         dy = y1-y2
         if self.is_vertical:
