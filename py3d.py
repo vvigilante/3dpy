@@ -395,7 +395,7 @@ class Cube():
     
     def transform(self, A):
         for f in self.faces:
-            f = f.transform(A)
+            f = f.transform(A) ##TODO < not working
 
 
 def main_interactive():
