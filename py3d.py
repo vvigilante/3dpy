@@ -2,13 +2,12 @@ import sys, os
 import numpy as np
 import cv2
 import functools
-EPS = 10e-4
-step = False
+from time import time
 
 def point_equal(A,B):
     return abs(A[0]-B[0])<1 and abs(A[1]-B[1])<1
 
-class Camera:
+class Camera(object):
     def __init__(self, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, f):
         self.pos_x = pos_x
         self.pos_y = pos_y
@@ -18,7 +17,15 @@ class Camera:
         self.rot_z = rot_z
         self.f = f
 
+    def __setattr__(self, name, value):
+        super(Camera, self).__setattr__(name, value)
+        if 'rot_x' in self.__dict__ and 'rot_y' in self.__dict__ and 'rot_z' in self.__dict__ and 'pos_x' in self.__dict__ and 'pos_y' in self.__dict__ and 'pos_z' in self.__dict__:
+            self.__dict__['_A'] = self._compute_transformation()
+
     def get_transformation(self):
+        return self._A
+
+    def _compute_transformation(self):
         cx = np.cos(self.rot_x)
         cy = np.cos(self.rot_y)
         cz = np.cos(self.rot_z)
@@ -27,20 +34,25 @@ class Camera:
         sz = np.sin(self.rot_z)
         return np.array(
             [
-                [cy*cz, sx*sy*cz+cx*sz,  -cx*sy*cz+sx*sz, self.pos_x],
-                [-cy*sz,  -sx*sy*sz+cx*cz, cx*sy*sz+sx*cz, self.pos_y],
-                [   sy,           -sx*cy,           cx*cy, self.pos_z],
-                [    0,               0,               0,           1],
+                [ cy*cz,  sx*sy*cz+cx*sz, -cx*sy*cz+sx*sz, self.pos_x],
+                [-cy*sz, -sx*sy*sz+cx*cz,  cx*sy*sz+sx*cz, self.pos_y],
+                [    sy,          -sx*cy,           cx*cy, self.pos_z],
+                [     0,               0,               0,          1],
             ], dtype=float
         )
 
 
 class Vertex:
-    def __init__(self, x, y, z):
-        self.pos = np.array([x,y,z,1])
-
+    def __init__(self, pos):
+        if len(pos)==3:
+            self.pos = np.array(list(pos)+[1])
+        else:
+            assert len(pos)==4
+            self.pos = np.array(pos, dtype=float)
+            self.pos[3] = 1
+    
     def transform(self, A):
-        self.pos = np.matmul(A,self.pos)
+        return Vertex( np.matmul(A,self.pos) )
 
     def __getattr__(self, name):
         if name=='x':
@@ -62,30 +74,29 @@ def _compute_normal(vertices):
 
 class Face():
     def __init__(self, vertices, color):
-        self.update(vertices,color)
-
-    def update(self, vertices, color):
         assert len(vertices)==3, 'only triangles are supported'
         self.vertices = vertices
         self.color = color
         self.normal = _compute_normal([v.pos[0:3] for v in self.vertices])
     
     def transform(self, A):
+        transformed_vertices = []
         for v in self.vertices:
-            v.transform(A)
-        self.normal = _compute_normal([v.pos[0:3] for v in self.vertices])
+            transformed_vertices.append( v.transform(A) )
+        return Face(transformed_vertices, self.color)
 
 class UniformShader():
     def __init__(self, face:Face, lights:list, points: list):
         self.face = face
         self.normal = _compute_normal(points)
         self.wireframe=(255,255,255)
+        self.color_back = tuple(np.array(self.face.color, dtype=int)/4)
 
     def __call__(self,x,y):
         if self.normal[2] > 0:
             return self.face.color
         else:
-            return tuple(np.array(self.face.color, dtype=int)/4)
+            return self.color_back
 
 
 class Light():
@@ -143,27 +154,13 @@ class World:
     def render(self):
         zbuf = np.zeros(self.canvas_shape+[1], dtype=float)
         canvas = np.zeros( self.canvas_shape+[3], dtype=np.uint8 )
-        def avg_z(face):
-            allz = [self._project(v)[2] for v in face.vertices]
-            return -np.max(allz)
-        def compare_z(a,b):
-            za = [self._project(v)[2] for v in a.vertices]
-            zb = [self._project(v)[2] for v in b.vertices]
-            zasort = np.argsort(za)[::-1]
-            zbsort = np.argsort(zb)[::-1]
-            for aidx,bidx in zip(zasort,zbsort):
-                if za[aidx] != zb[bidx]:
-                    return zb[aidx] - za[bidx]
-            return 0
-
-        faces = sorted(self.faces, key=functools.cmp_to_key(compare_z))
-        for f in faces:
+        for f in self.faces:
             self._render_face(canvas, zbuf, f)
-        for f in faces:
-            for p in f.vertices:
-                u,v,z = self._project(p)
-                e = max(0, 255-min(255, (z-200.2)*300))
-                cv2.putText(canvas, '%.2f'%z, (int(u),int(v)), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (e,e,e), 1)
+        #for f in faces:
+        #    for p in f.vertices:
+        #        u,v,z = self._project(p)
+        #        e = max(0, 255-min(255, (z-200.2)*300))
+        #        cv2.putText(canvas, '%.2f'%z, (int(u),int(v)), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (e,e,e), 1)
 
         return canvas
 
@@ -218,20 +215,16 @@ class World:
             #print('generic')
             _render_line_to_line(canvas, zbuf, line_tb, line_to, T[1], M[1], pixel_shader)
             _render_line_to_line(canvas, zbuf, line_tb, line_ob, M[1], B[1], pixel_shader)
-        
-        #zbuf_display = ( zbuf - zbuf.min() )
-        #zbuf_display /= (zbuf_display.max())
-        #zbuf_display = (zbuf_display*255).clip(0,255).astype(np.uint8)
-        #cv2.imshow('zbuf', zbuf_display)
-        #k = cv2.waitKey(300)
-        if step:
-            cv2.imshow('3dpy', canvas)
-            k = cv2.waitKey(0)
+
+def clip(num, min, max):
+    if num<min: return min
+    if num>max: return max
+    return num
 
 def _render_line_to_line(canvas, zbuf, line1, line2, y_start, y_end, shader):
     # enforce canvas boundaries
-    y_start = round(min(max(y_start,0), canvas.shape[0]-1))
-    y_end = round(min(max(y_end,0), canvas.shape[0]-1))
+    y_start = round(clip(y_start,0, canvas.shape[0]-1))
+    y_end = round(clip(y_end,0, canvas.shape[0]-1))
     # draw top to bottom
     for y in range(y_start, y_end):
         x1 = line1.get_x(y)
@@ -246,15 +239,15 @@ def _render_line_to_line(canvas, zbuf, line1, line2, y_start, y_end, shader):
             return (1-t)*z_start + t*z_end
 
         # enforce canvas boundaries
-        x_start = round(min(max(x_start,0), canvas.shape[1]-1))
-        x_end = round(min(max(x_end,0), canvas.shape[1]-1))
-        #print(y, x_start, x_end)
+        x_start = round(clip(x_start, 0, canvas.shape[1]-1))
+        x_end = round(clip(x_end, 0, canvas.shape[1]-1))
+        
         for x in range(x_start, x_end):
             invz = 1.0/get_z(x)
             if invz > zbuf[y,x]:
                 zbuf[y,x] = invz
                 c = shader(x,y)
-                if c is not None: canvas[y,x,:] = c
+                canvas[y,x,:] = c
                 if shader.wireframe and (x==x_start or x==x_end):
                     canvas[y,x,:] = shader.wireframe
 
@@ -351,17 +344,17 @@ def getroty(t):
     A = np.array([
         [ np.cos(t), 0, -np.sin(t),  0],
         [         0, 1,          0, 0],
-        [np.sin(t), 0,  np.cos(t), 0],
+        [ np.sin(t), 0,  np.cos(t), 0],
         [         0, 0,          0, 1]
     ], dtype=float)
     return A
 
 def getrotx(t):
     A = np.array([
-        [         1,         0,          0, 0],
-        [         0, np.cos(t), np.sin(t), 0],
+        [         1,          0,          0, 0],
+        [         0,  np.cos(t),  np.sin(t), 0],
         [         0, -np.sin(t),  np.cos(t), 0],
-        [         0,         0,          0, 1]
+        [         0,          0,          0, 1]
     ], dtype=float)
     return A
 
@@ -376,14 +369,14 @@ def get_quad(v0,v1,v2,v3, **kwargs):
 class Cube():
     def __init__(self, d=0.5):
         vertices = [
-            Vertex(-d, -d, -d),
-            Vertex(-d, -d,  d),
-            Vertex(-d,  d,  d),
-            Vertex(-d,  d, -d),
-            Vertex( d, -d, -d),
-            Vertex( d, -d,  d),
-            Vertex( d,  d,  d),
-            Vertex( d,  d, -d),
+            Vertex((-d, -d, -d)),
+            Vertex((-d, -d,  d)),
+            Vertex((-d,  d,  d)),
+            Vertex((-d,  d, -d)),
+            Vertex(( d, -d, -d)),
+            Vertex(( d, -d,  d)),
+            Vertex(( d,  d,  d)),
+            Vertex(( d,  d, -d)),
         ]
         color = [0,200,0]
         self.faces = []
@@ -402,12 +395,11 @@ class Cube():
     
     def transform(self, A):
         for f in self.faces:
-            f.transform(A)
+            f = f.transform(A)
 
-if __name__ == "__main__":
 
+def main_interactive():
     w = World(360, 360, UniformShader)
-    #test_obj = [ Face([Vertex(-0.2, 0.2, 0.0), Vertex(0.0, 0.2, 0.0), Vertex(0.0, -0.4, 0.0)], (0,0,200)) ]
     test_obj = Cube()
     w.load_object(test_obj)
     w.load_light(DirectionalLight((1,1,1),1))
@@ -418,6 +410,7 @@ if __name__ == "__main__":
     w.camera.rot_y = 0.0
     w.camera.rot_z = 0.0
     while True:
+        '''
         scale=20
         xz = show_projection(test_obj, w.camera, AXIS_X,AXIS_Z, scale=scale)
         xy = show_projection(test_obj, w.camera, AXIS_X,AXIS_Y, scale=scale)
@@ -427,10 +420,12 @@ if __name__ == "__main__":
         tmp = np.vstack([yz,tmp])
         proj = np.hstack([proj,tmp])
         cv2.imshow('projection', proj)
-
+        '''
+        t_start = time()
         canvas = w.render()
-        step = False
+        t_elapsed = time()-t_start
         cv2.putText(canvas, 'Camera: %.2f %.2f %.2f %.2f %.2f %.2f'%(w.camera.pos_x, w.camera.pos_y, w.camera.pos_z, w.camera.rot_x, w.camera.rot_y, w.camera.rot_z), (14,14), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
+        cv2.putText(canvas, 'Time: %.2fs'%t_elapsed, (14,30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,255,255), 1)
         cv2.imshow('3dpy', canvas)
         k = cv2.waitKey(5)
         rotq = np.pi/8
@@ -468,5 +463,24 @@ if __name__ == "__main__":
             w.camera.rot_y-=rotq
         elif k==ord('m'):
             w.camera.rot_y+=rotq
-        elif k==ord('-'):
-            step = True
+
+def main_batch():
+    w = World(360, 360, UniformShader)
+    test_obj = Cube()
+    w.load_object(test_obj)
+    w.load_light(DirectionalLight((1,1,1),1))
+    w.camera.f = 5.0
+    w.camera.pos_z = 5
+    w.camera.pos_y = 0
+    w.camera.rot_x = 0.0
+    w.camera.rot_y = 0.0
+    w.camera.rot_z = 0.0
+    from tqdm import tqdm
+    for i in tqdm(np.linspace(0,2*np.pi)[:-1]):
+        w.camera.rot_y = i
+        w.camera.rot_x = i
+        canvas = w.render()
+
+
+if __name__ == "__main__":
+    main_interactive()
