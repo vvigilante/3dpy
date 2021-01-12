@@ -118,15 +118,18 @@ class WireframeShader():
 
 
 class FlatShader():
-    def __init__(self, face:Face, lights: list):
+    def __init__(self, face:Face, lights: list, points: list):
         self.face = face
         self.lights = lights
         self.wireframe=(255,255,255)
-        self.ambient = 0.2 # TODO move
+        self.ambient = 0.1 # TODO move
         self.color = np.zeros(3,)
+        self.normal = self.face.normal #_compute_normal(points)
         for light in self.lights:
             if DirectionalLight==type(light):
-                dot=np.abs(np.dot(self.face.normal, light.direction))
+                #dot=np.max([0,np.dot(self.normal, light.direction)])
+                dot=np.abs(np.dot(self.normal, light.direction))
+                #print(light.direction, self.normal, dot)
                 self.color+= dot*light.intensity*np.array(self.face.color, dtype=float)
         self.color = self.color*(1-self.ambient) + self.ambient*np.array(self.face.color, dtype=float)
         self.color = tuple(self.color.astype(np.uint8))
@@ -169,12 +172,12 @@ class World:
         A = self.camera.get_transformation()
         pos = np.matmul(A, pos)
         x,y,z,_ = pos
-        u = self.camera.f*x/z
-        v = self.camera.f*y/z
+        x1 = self.camera.f*x/z
+        y1 = self.camera.f*y/z
         # reference to the canvas size
         h,w = self.canvas_shape
-        u = u*w/2+ w/2
-        v = v*h/2+ h/2
+        u = x1*w/2+ w/2
+        v = y1*h/2+ h/2
         return u,v, z
 
 
@@ -378,14 +381,14 @@ class Cube():
             Vertex(( d,  d,  d)),
             Vertex(( d,  d, -d)),
         ]
-        color = [0,200,0]
+        color = [200,200,200]
         self.faces = []
-        self.faces += get_quad(vertices[0], vertices[1], vertices[2], vertices[3], color=[200,200,0])
+        self.faces += get_quad(vertices[0], vertices[1], vertices[2], vertices[3], color=color)
         self.faces += get_quad(vertices[4], vertices[5], vertices[6], vertices[7], color=color)
-        self.faces += get_quad(vertices[0], vertices[4], vertices[5], vertices[1], color=[200,0,0])
-        #self.faces += get_quad(vertices[2], vertices[6], vertices[7], vertices[3], color=[200,0,0])
-        self.faces += get_quad(vertices[1], vertices[5], vertices[6], vertices[2], color=[0,0,200])
-        #self.faces += get_quad(vertices[0], vertices[3], vertices[7], vertices[4], color=[0,0,200])
+        self.faces += get_quad(vertices[0], vertices[4], vertices[5], vertices[1], color=color)
+        self.faces += get_quad(vertices[2], vertices[6], vertices[7], vertices[3], color=color)
+        self.faces += get_quad(vertices[1], vertices[5], vertices[6], vertices[2], color=color)
+        self.faces += get_quad(vertices[0], vertices[3], vertices[7], vertices[4], color=color)
     
     def __getitem__(self, i, **kwargs):
         return self.faces.__getitem__(i, **kwargs)
@@ -399,10 +402,10 @@ class Cube():
 
 
 def main_interactive():
-    w = World(360, 360, UniformShader)
+    w = World(360, 360, FlatShader)
     test_obj = Cube()
     w.load_object(test_obj)
-    w.load_light(DirectionalLight((1,1,1),1))
+    w.load_light(DirectionalLight((0.5,0.2,1),1))
     w.camera.f = 5.0
     w.camera.pos_z = 5
     w.camera.pos_y = 0
