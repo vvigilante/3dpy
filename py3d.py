@@ -2,6 +2,7 @@ import sys, os
 import numpy as np
 import cv2
 import functools
+from tqdm import tqdm
 from time import time
 
 def point_equal(A,B):
@@ -136,6 +137,11 @@ class FlatShader():
 
     def __call__(self,x,y):
         return self.color
+
+class FlatShaderNoWireframe(FlatShader):
+    def __init__(self, *args, **kwargs):
+        super(FlatShaderNoWireframe, self).__init__(*args, **kwargs)
+        self.wireframe=None
 
 
 class World:
@@ -369,8 +375,22 @@ def get_quad(v0,v1,v2,v3, **kwargs):
             Face([v2,v3,v0], **kwargs),
     ]
 
-class Cube():
+class Obj():
+    def __init__(self):
+        self.faces=[]
+    def __getitem__(self, i, **kwargs):
+        return self.faces.__getitem__(i, **kwargs)
+
+    def __iter__(self, **kwargs):
+        return self.faces.__iter__(**kwargs)
+    
+    def transform(self, A):
+        for f in self.faces:
+            f = f.transform(A) ##TODO < not working
+
+class Cube(Obj):
     def __init__(self, d=0.5):
+        super(Cube, self).__init__()
         vertices = [
             Vertex((-d, -d, -d)),
             Vertex((-d, -d,  d)),
@@ -390,20 +410,36 @@ class Cube():
         self.faces += get_quad(vertices[1], vertices[5], vertices[6], vertices[2], color=color)
         self.faces += get_quad(vertices[0], vertices[3], vertices[7], vertices[4], color=color)
     
-    def __getitem__(self, i, **kwargs):
-        return self.faces.__getitem__(i, **kwargs)
 
-    def __iter__(self, **kwargs):
-        return self.faces.__iter__(**kwargs)
+
+class STL(Obj):
+    def __init__(self, path, color=[200,200,200]):
+        super(STL, self).__init__()
+        self.faces = []
+        with open(path) as f:
+            curface = None
+            for line in f:
+                line = line.split(' ')
+                line[0]=line[0].strip()
+                if line[0]=='facet':
+                    curface = []
+                elif line[0]=='endfacet':
+                    assert len(curface)==3, "Only triangles are supported"
+                    self.faces.append( Face(curface, color=color) )
+                    curface = None
+                elif line[0]=='vertex':
+                    vertex = [float(v) for v in line[1:]]
+                    curface.append(Vertex(vertex) )
+        print("Loaded %d faces."%len(self.faces))
     
-    def transform(self, A):
-        for f in self.faces:
-            f = f.transform(A) ##TODO < not working
+
+
 
 
 def main_interactive():
-    w = World(360, 360, FlatShader)
-    test_obj = Cube()
+    w = World(360, 360, FlatShaderNoWireframe)
+    #test_obj = Cube()
+    test_obj = STL('Suzanne.stl')
     w.load_object(test_obj)
     w.load_light(DirectionalLight((0.5,0.2,1),1))
     w.camera.f = 5.0
@@ -478,7 +514,6 @@ def main_batch():
     w.camera.rot_x = 0.0
     w.camera.rot_y = 0.0
     w.camera.rot_z = 0.0
-    from tqdm import tqdm
     for i in tqdm(np.linspace(0,2*np.pi)[:-1]):
         w.camera.rot_y = i
         w.camera.rot_x = i
