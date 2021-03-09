@@ -128,8 +128,8 @@ class FlatShader():
         self.normal = self.face.normal #_compute_normal(points)
         for light in self.lights:
             if DirectionalLight==type(light):
-                #dot=np.max([0,np.dot(self.normal, light.direction)])
-                dot=np.abs(np.dot(self.normal, light.direction))
+                dot=np.max([0,np.dot(self.normal, light.direction)])
+                #dot=np.abs(np.dot(self.normal, light.direction))
                 #print(light.direction, self.normal, dot)
                 self.color+= dot*light.intensity*np.array(self.face.color, dtype=float)
         self.color = self.color*(1-self.ambient) + self.ambient*np.array(self.face.color, dtype=float)
@@ -441,11 +441,11 @@ def main_interactive():
     #test_obj = Cube()
     test_obj = STL('Suzanne.stl')
     w.load_object(test_obj)
-    w.load_light(DirectionalLight((0.5,0.2,1),1))
+    w.load_light(DirectionalLight((1,-1,-1),1))
     w.camera.f = 5.0
-    w.camera.pos_z = 5
+    w.camera.pos_z = 7
     w.camera.pos_y = 0
-    w.camera.rot_x = 0.0
+    w.camera.rot_x = -1.5
     w.camera.rot_y = 0.0
     w.camera.rot_z = 0.0
     while True:
