@@ -8,6 +8,22 @@ from time import time
 def point_equal(A,B):
     return abs(A[0]-B[0])<1 and abs(A[1]-B[1])<1
 
+def compute_transformation(rx:float,ry:float,rz:float,px:float,py:float,pz:float):
+    cx = np.cos(rx)
+    cy = np.cos(ry)
+    cz = np.cos(rz)
+    sx = np.sin(rx)
+    sy = np.sin(ry)
+    sz = np.sin(rz)
+    return np.array(
+        [
+            [ cy*cz,  sx*sy*cz+cx*sz, -cx*sy*cz+sx*sz, px],
+            [-cy*sz, -sx*sy*sz+cx*cz,  cx*sy*sz+sx*cz, py],
+            [    sy,          -sx*cy,           cx*cy, pz],
+            [     0,               0,               0,  1],
+        ], dtype=float
+    )
+
 class Camera(object):
     def __init__(self, pos_x, pos_y, pos_z, rot_x, rot_y, rot_z, f):
         self.pos_x = pos_x
@@ -27,20 +43,8 @@ class Camera(object):
         return self._A
 
     def _compute_transformation(self):
-        cx = np.cos(self.rot_x)
-        cy = np.cos(self.rot_y)
-        cz = np.cos(self.rot_z)
-        sx = np.sin(self.rot_x)
-        sy = np.sin(self.rot_y)
-        sz = np.sin(self.rot_z)
-        return np.array(
-            [
-                [ cy*cz,  sx*sy*cz+cx*sz, -cx*sy*cz+sx*sz, self.pos_x],
-                [-cy*sz, -sx*sy*sz+cx*cz,  cx*sy*sz+sx*cz, self.pos_y],
-                [    sy,          -sx*cy,           cx*cy, self.pos_z],
-                [     0,               0,               0,          1],
-            ], dtype=float
-        )
+        A = compute_transformation(self.rot_x, self.rot_y, self.rot_z, self.pos_x, self.pos_y, self.pos_z)
+        return A
 
 
 class Vertex:
@@ -106,10 +110,13 @@ class Light():
 
 class DirectionalLight(Light):
     def __init__(self, direction, intensity):
+        self.set_direction(direction)
+        self.intensity = intensity
+
+    def set_direction(self, direction):
         self.direction = np.array(direction, dtype=float)
         assert self.direction.shape==(3,), 'Direction must be a vector (x,y,z)'
         self.direction /= np.linalg.norm(direction) # normalize
-        self.intensity = intensity
 
 class WireframeShader():
     def __init__(self, face:Face, lights: list):
@@ -142,6 +149,7 @@ class FlatShaderNoWireframe(FlatShader):
     def __init__(self, *args, **kwargs):
         super(FlatShaderNoWireframe, self).__init__(*args, **kwargs)
         self.wireframe=None
+
 
 
 class World:
@@ -504,21 +512,33 @@ def main_interactive():
             w.camera.rot_y+=rotq
 
 def main_batch():
-    w = World(360, 360, UniformShader)
-    test_obj = Cube()
+    w = World(360, 360, FlatShaderNoWireframe)
+    #test_obj = Cube()
+    test_obj = STL('Suzanne.stl')
+    test_light = DirectionalLight((1,-1,-1),1)
     w.load_object(test_obj)
-    w.load_light(DirectionalLight((1,1,1),1))
+    w.load_light(test_light)
     w.camera.f = 5.0
-    w.camera.pos_z = 5
+    w.camera.pos_z = 8
     w.camera.pos_y = 0
-    w.camera.rot_x = 0.0
+    w.camera.rot_x = -1.5
     w.camera.rot_y = 0.0
     w.camera.rot_z = 0.0
-    for i in tqdm(np.linspace(0,2*np.pi)[:-1]):
-        w.camera.rot_y = i
-        w.camera.rot_x = i
+    for i,v in enumerate(tqdm(np.linspace(0,2*np.pi, num=96)[:-1])):
+        w.camera.rot_y = v
+        d = np.array([1,-1,-1, 1], dtype=float)
+        lrx,lry,lrz = 0,0,v
+        d = np.matmul( compute_transformation(lrx,lry,lrz, 0,0,0),  d)
+        test_light.set_direction(d[:3])
         canvas = w.render()
+        #cv2.putText(canvas, 'Cam: %.2f %.2f %.2f Light: %.2f %.2f %.2f F%02d'%(w.camera.rot_x, w.camera.rot_y, w.camera.rot_z, lrx,lry,lrz, i), (14,14), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255,255,255), 1)
+        canvas=canvas[60:300,:]
+        cv2.imwrite('out/f%03d.png'%i, canvas)
+    os.system('ffmpeg -v warning -i out/f%03d.png -vf "palettegen" -y out/palette.png')
+    os.system('ffmpeg  -framerate 12 -v warning -i out/f%03d.png -i out/palette.png -lavfi "[0:v] paletteuse" -y "outtest.gif"')
+    #os.system('rm -f out/f???.png')
 
 
 if __name__ == "__main__":
-    main_interactive()
+    #main_interactive()
+    main_batch()
