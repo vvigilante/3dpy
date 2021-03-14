@@ -119,7 +119,7 @@ class DirectionalLight(Light):
         self.direction /= np.linalg.norm(direction) # normalize
 
 class WireframeShader():
-    def __init__(self, face:Face, lights: list):
+    def __init__(self, face:Face, lights: list, points=None):
         self.wireframe=(face.color)
     def __call__(self,x,y):
         return None
@@ -149,6 +149,7 @@ class FlatShaderNoWireframe(FlatShader):
     def __init__(self, *args, **kwargs):
         super(FlatShaderNoWireframe, self).__init__(*args, **kwargs)
         self.wireframe=None
+
 
 
 
@@ -264,7 +265,8 @@ def _render_line_to_line(canvas, zbuf, line1, line2, y_start, y_end, shader):
             if invz > zbuf[y,x]:
                 zbuf[y,x] = invz
                 c = shader(x,y)
-                canvas[y,x,:] = c
+                if c is not None:
+                    canvas[y,x,:] = c
                 if shader.wireframe and (x==x_start or x==x_end):
                     canvas[y,x,:] = shader.wireframe
 
@@ -540,5 +542,5 @@ def main_batch():
 
 
 if __name__ == "__main__":
-    #main_interactive()
-    main_batch()
+    main_interactive()
+    #main_batch()
